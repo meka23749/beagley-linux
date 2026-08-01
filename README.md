@@ -138,6 +138,9 @@ make -j8 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- Image dtbs modules
 | Kernel | `arch/arm64/boot/Image` | 51 MB |
 | Device tree | `arch/arm64/boot/dts/ti/k3-am67a-beagley-ai.dtb` | 65 KB |
 
+![Kernel build](screenshots/kernel-build.png)
+*Modules compiling, then verification: `Image` (51 MB), the `k3-am67a-beagley-ai.dtb` device tree (65 KB), and `file` confirming a `Linux kernel ARM64 boot executable`.*
+
 > ⚠️ **Design choice: pure mainline kernel** (instead of the TI vendor fork).
 > Accepted trade-off: partial hardware support (WiFi not working — see debugging).
 
@@ -170,11 +173,17 @@ Check:
 uname -r    # → 7.1.5   (not the original 7.0.9)
 ```
 
+![Custom kernel booted](screenshots/uname-boot.png)
+*The `uname -a` output shows the self-compiled 7.1.5 kernel running on aarch64. The build timestamp (`Fri Jul 31 22:20:57 CEST 2026`) confirms it's freshly built — not the vendor kernel.*
+
 ---
 
 ## Step 4 — Deep debugging
 
 Two services failed at boot (`iwd` = WiFi, `docker`). Investigation method: **funnel** from symptom to root cause.
+
+![Boot failures](screenshots/failed-services.png)
+*The two `[FAILED]` services caught at boot — the starting point of the investigation.*
 
 ```
 systemctl status  →  ip link / journalctl  →  dmesg  →  .config / device tree
