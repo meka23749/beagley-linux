@@ -1,0 +1,22 @@
+# Downloaded/compiled sources and large binaries — do not version
+linux-*.tar.*
+busybox-*.tar.*
+linux-*/
+busybox-*/
+*.cpio.gz
+*.tar.gz
+
+# Build artifacts
+Image
+Image-mine
+*.dtb
+*.ko
+modules_out/
+rootfs/bin/
+rootfs/sbin/
+rootfs/usr/
+
+# Misc
+*.o
+*.log
+.DS_Store

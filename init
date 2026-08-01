@@ -1,0 +1,23 @@
+#!/bin/sh
+# PID 1 - first program launched by the kernel
+# beagley-linux — Embedded Linux From Scratch
+
+# Mount essential virtual filesystems
+mount -t proc none /proc
+mount -t sysfs none /sys
+mount -t devtmpfs none /dev
+
+# Set PATH so the shell can find commands
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+
+# Welcome message
+echo ""
+echo "============================================"
+echo "  Welcome to Steve's homemade Linux system!"
+echo "  Kernel: $(uname -r)"
+echo "  Rootfs: BusyBox from scratch"
+echo "============================================"
+echo ""
+
+# Interactive shell attached to the serial console
+exec setsid cttyhack /bin/sh
