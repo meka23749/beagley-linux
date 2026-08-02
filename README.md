@@ -22,6 +22,7 @@
 - [Step 3 — First boot of the custom kernel](#step-3--first-boot-of-the-custom-kernel)
 - [Step 4 — Deep debugging](#step-4--deep-debugging)
 - [Step 5 — BusyBox rootfs from scratch](#step-5--busybox-rootfs-from-scratch)
+- [Step 6 — Controlling hardware: from sysfs to a C app](#step-6--controlling-hardware-from-sysfs-to-a-c-app)
 - [Bug log](#-bug-log-encountered--solved)
 - [What's left to do](#-whats-left-to-do)
 - [Key lessons learned](#-key-lessons-learned)
@@ -84,6 +85,8 @@ Image + .dtb     ← THE self-built kernel + its device tree
 - [x] Assembled a **rootfs from scratch** by hand
 - [x] Wrote a **custom `/init`** (PID 1)
 - [x] Packaged and booted an **initramfs** → full working system 🎉
+- [x] Controlled a real LED from userspace (`/sys/class/leds/`)
+- [x] Wrote, cross-compiled and shipped a **C app** (SOS Morse) inside the rootfs
 
 ---
 
@@ -331,6 +334,86 @@ PID   USER     TIME  COMMAND
 ~ # free
 Mem:  3872428 total   51444 used   3813520 free   ← 51 MB for the whole system!
 ```
+
+---
+
+## Step 6 — Controlling hardware: from sysfs to a C app
+
+With the platform running, the next question is: *how does an application actually talk to hardware?*
+This step drives a real LED — first from the shell, then from a C program cross-compiled and shipped inside the rootfs.
+
+### 6.1 — The mechanism (device tree → driver → sysfs)
+
+The chain that makes hardware controllable is the heart of embedded Linux:
+
+```
+Device tree declares the LED  (compatible = "gpio-leds"; gpios = <...>)
+        ↓
+Kernel activates the leds-gpio driver
+        ↓
+Driver exposes an interface:  /sys/class/leds/<led>/
+        ↓
+Userspace writes to it → the physical LED reacts
+```
+
+A key insight lived through this project: **hardware access comes from the kernel + device tree, not from the distro.** The same LED could be controlled from Debian *and* from the bare BusyBox system — because both used the same kernel and device tree.
+
+### 6.2 — Discovering and controlling the LED
+
+```bash
+ls /sys/class/leds/
+# → led-0  mmc1::  :heartbeat   (mainline names — generic)
+
+# Take manual control (disable the automatic trigger)
+echo none > /sys/class/leds/led-0/trigger
+echo 1    > /sys/class/leds/led-0/brightness   # ON  (LED turns red)
+echo 0    > /sys/class/leds/led-0/brightness   # OFF
+```
+
+> 💡 **Another mainline vs vendor difference:** the vendor device tree names the LEDs `ACT`, `PWR`, `mmc1::`, `mmc2::` (readable, with colors). The mainline device tree exposes generic names (`led-0`, `:heartbeat`) and fewer LEDs — the base hardware works, but the vendor adds the polish.
+
+### 6.3 — A real C application: SOS in Morse code
+
+A C program that blinks `··· ——— ···` (SOS) on the LED. Uses the fundamental syscalls of embedded development: `open`, `write`, `close`, `usleep`. See `sos.c` in this repo.
+
+```c
+#define LED_BRIGHTNESS "/sys/class/leds/led-0/brightness"
+
+void blink(int duration) {
+    write_sysfs(LED_BRIGHTNESS, "1");   // ON
+    usleep(duration);
+    write_sysfs(LED_BRIGHTNESS, "0");   // OFF
+    usleep(GAP);
+}
+// S = dot dot dot, O = dash dash dash, S = dot dot dot → repeat
+```
+
+**Cross-compiled static** (self-contained, runs on the bare rootfs — like BusyBox):
+
+```bash
+aarch64-linux-gnu-gcc -static -o sos sos.c
+file sos   # → ELF 64-bit ARM aarch64, statically linked
+```
+
+**Shipped inside the rootfs** (becomes part of the system):
+
+```bash
+cp sos ~/beagley/rootfs/bin/sos
+cd ~/beagley/rootfs
+find . | cpio -H newc -o | gzip > ~/beagley/initramfs.cpio.gz   # repack the image
+```
+
+> ⚠️ An initramfs lives **in RAM** and is rebuilt from its archive on every boot.
+> To make a change permanent, the archive must be **repacked** — you can't just drop a file at runtime.
+
+✅ **Result:** booting the fully self-built system and running `sos` makes the LED transmit the Morse distress signal in a loop — a complete embedded dev cycle: **write on PC → cross-compile → deploy to target → hardware reacts.**
+
+```
+~ # sos
+Transmitting SOS in Morse... (Ctrl+C to stop)
+```
+
+*The full chain, end to end: a C program I wrote, cross-compiled, integrated into a rootfs I assembled, running on a kernel I compiled, driving a real LED on a board I brought to boot.*
 
 ---
 
