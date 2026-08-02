@@ -192,20 +192,22 @@ Two services failed at boot (`iwd` = WiFi, `docker`). Investigation method: **fu
 systemctl status  →  ip link / journalctl  →  dmesg  →  .config / device tree
 ```
 
-### 🔴 WiFi (`iwd.service`)
+### 🔴 WiFi (`iwd.service`) — a 3-layer investigation
 
 | Step | Finding |
 |---|---|
 | `systemctl status iwd` | Service crash-loops |
 | `ip link` | No `wlan0` interface |
 | `dmesg \| grep wl18` | **Total silence** — kernel never mentions the chip |
-| `.config` | `CONFIG_WL18XX=m` → driver present but **as a module** |
+| `.config` | `CONFIG_WL18XX=m` → a driver is present but **as a module** |
 | `/lib/modules/` | ❌ `7.1.5/` missing → modules never deployed |
-| **After deploying modules** | Module loads, firmware present, **but still no `wlan0`** |
-| **Final root cause** | The **mainline device tree doesn't declare the chip** (`wlcore@2` missing) |
+| **Layer 1 fixed** | Deployed modules → `wl18xx` loads, firmware present, **but still no `wlan0`** |
+| **Layer 2 found** | The mainline device tree doesn't declare the chip (`wlcore@2` missing under `mmc@fa20000`) |
+| **Layer 3 — the real cause** | The vendor DT declares the chip as `compatible = "ti,cc3300"` — a **CC33xx**, not a wl18xx. The CC33xx driver **does not exist in mainline 7.1.5** at all. |
 
-> 💡 Revelation: the vendor device tree (99 KB) contains the `wlcore@2` node under `mmc@fa20000`.
-> The mainline device tree (65 KB) doesn't. **34 KB less hardware described.**
+> 💡 **The deep root cause:** the board's actual WiFi chip is a **TI CC33xx** (recent). Its driver is [new and under active development at TI](https://docs.beagleboard.org/boards/beagley/ai/demos/using-edge-ai.html), shipped only in the **vendor kernel** (6.1/6.6/6.12-ti) as a separate module (`cc33xx 1.0.x`). Mainline 7.1.5 only ships the older `wl1251/wl12xx/wl18xx` drivers.
+>
+> **Engineering decision:** forward-porting a 6.x vendor driver (itself still in active development, and troublesome even on its native kernel) to mainline 7.1.5 would mean reconciling large kernel-API differences for a very low chance of success. The right call — and what a BSP engineer would conclude — is that **this board's WiFi is only supported on the TI vendor kernel**, not yet on mainline. Documented, not forced.
 
 ### 🔴 Docker (`docker.service`)
 
@@ -425,7 +427,7 @@ Every bug taught something. This is the real content of the project.
 |---|---|---|---|
 | 1 | `iwd`/`docker` FAILED at boot | `=m` modules never deployed | `make modules_install` + scp |
 | 2 | Endless scp transfer (`.c`, `.o`...) | `build`/`source` symlinks followed by `scp -r` | `tar --exclude` + compressed archive |
-| 3 | `wl18xx` loaded but no `wlan0` | **Device tree** missing `wlcore@2` node | TODO (BSP porting) |
+| 3 | `wl18xx` loaded but no `wlan0` | Real chip is a **CC33xx**; its driver isn't in mainline 7.1.5 (only vendor 6.x) | Investigated → documented as a limitation |
 | 4 | Docker: `overlay: no such device` | overlay module not deployed | Fixed (modules) |
 | 5 | Docker: `nft: Protocol not supported` | nftables modules not loaded | TODO |
 | 6 | `Wrong Ramdisk Image Format` | `booti` expects a uImage, not a raw cpio.gz | Add `:${filesize}` |
@@ -439,18 +441,8 @@ Every bug taught something. This is the real content of the project.
 
 ## 📌 What's left to do
 
-### 🔵 WiFi — Device tree porting (most educational)
-Add the `wlcore@2` node (WL18xx chip on SDIO) to the mainline device tree, based on the vendor device tree:
-```
-mmc@fa20000 {
-    ...
-    wlcore@2 {
-        compatible = "ti,wl1837";
-        /* interrupt, wlan_en regulator, pins... */
-    };
-};
-```
-→ edit the `.dts`, rebuild with `make dtbs`, redeploy.
+### ✅ WiFi — investigated & decided (not a TODO)
+Full investigation done (see the 3-layer WiFi section above). Conclusion: the board's CC33xx chip has **no mainline driver** in 7.1.5; it's only supported by the TI vendor kernel (6.x) via a separate, actively-developed module. Forward-porting was evaluated and deliberately **not** attempted — wrong cost/benefit. WiFi on mainline is a known limitation, documented as an engineering decision rather than left as a vague "TODO".
 
 ### 🔵 Docker — Network modules
 Load/enable `nf_tables`, `nft_chain_nat`, etc.
@@ -475,6 +467,7 @@ Add an entry to `/boot/firmware/extlinux/extlinux.conf` to boot automatically wi
 6. **Verify before concluding**: several "obvious" hypotheses turned out wrong (a driver "missing" that was actually an undeployed module).
 7. **Boot-time memory management**: kernel, DT and initramfs must not overlap in RAM.
 8. **`/init` must be executable and at the root** of the initramfs, or the kernel picks the first other init it finds.
+9. **Vendor vs mainline is a real trade-off.** Recent chips (like the CC33xx WiFi) are supported by the vendor kernel long before mainline. Knowing *when not to* forward-port — and documenting the limitation instead — is an engineering decision, not a failure.
 
 ---
 
