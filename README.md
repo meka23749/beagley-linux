@@ -442,7 +442,26 @@ Every bug taught something. This is the real content of the project.
 ## 📌 What's left to do
 
 ### ✅ WiFi — investigated & decided (not a TODO)
-Full investigation done (see the 3-layer WiFi section above). Conclusion: the board's CC33xx chip has **no mainline driver** in 7.1.5; it's only supported by the TI vendor kernel (6.x) via a separate, actively-developed module. Forward-porting was evaluated and deliberately **not** attempted — wrong cost/benefit. WiFi on mainline is a known limitation, documented as an engineering decision rather than left as a vague "TODO".
+Full investigation done (see the 3-layer WiFi section above). Conclusion: the board's CC33xx chip has **no mainline driver** in 7.1.5; it's only supported by the TI vendor kernel (6.x) via a separate, actively-developed module. Forward-porting was evaluated and deliberately **not** attempted — wrong cost/benefit. WiFi on mainline is a known limitation, documented as an engineering decision.
+
+<details>
+<summary><b>🎫 TICKET-001 — WiFi (CC33xx) not supported on mainline — help welcome</b> (click to expand)</summary>
+
+**Status:** open · **Priority:** low · **Blocked by:** upstream (TI / mainline) · **Contributions welcome** 🙌
+
+The CC33xx driver is *under active development at TI*. The situation is **time-dependent** — it may reach mainline in a future release. If you're reading this and have ideas, hit the `wlan0` on mainline, or know the current upstream status, **issues and PRs are welcome**.
+
+**Context:**
+
+> WiFi non-functional on a BeagleY-AI (SoC AM67A / J722S) with a **mainline 7.1.5** kernel. Diagnosis already done: the chip is a **CC33xx** (`compatible = "ti,cc3300"` in the vendor device tree), and its driver is **not in mainline** (`drivers/net/wireless/ti/` only has wl1251/wl12xx/wl18xx/wlcore) — it only ships in the TI vendor kernel (6.1/6.6/6.12-ti) as a separately-developed module. Modules deploy fine and `wl18xx` loads, but it's the wrong driver, so no `wlan0` and `dmesg` stays silent. **Has this changed since?** Is the CC33xx driver now in a newer mainline release? What are the realistic options to bring up this WiFi — forward-port the vendor driver, move to a newer kernel, or stay on the TI vendor kernel?
+
+**Checks to run when picking this up:**
+- `ls drivers/net/wireless/ti/` on a newer mainline — is there a `cc33xx/` now?
+- Search kernel changelogs / `git log` for `cc33xx` upstreaming
+- Check the latest TI vendor kernel version and the `cc33xx` driver release
+
+**If you've solved this** (on mainline or via a clean forward-port), please open a PR or an issue — I'd love to close this ticket. 🚀
+</details>
 
 ### 🔵 Docker — Network modules
 Load/enable `nf_tables`, `nft_chain_nat`, etc.
