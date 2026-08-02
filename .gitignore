@@ -23,6 +23,7 @@ rootfs/usr/
 .vscode/
 
 # Editor / IDE
+setup-git.sh
 .vscode/
 .idea/
 *.swp
