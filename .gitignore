@@ -20,3 +20,10 @@ rootfs/usr/
 *.o
 *.log
 .DS_Store
+.vscode/
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*~
