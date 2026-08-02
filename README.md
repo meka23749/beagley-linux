@@ -23,6 +23,7 @@
 - [Step 4 — Deep debugging](#step-4--deep-debugging)
 - [Step 5 — BusyBox rootfs from scratch](#step-5--busybox-rootfs-from-scratch)
 - [Step 6 — Controlling hardware: from sysfs to a C app](#step-6--controlling-hardware-from-sysfs-to-a-c-app)
+- [Step 7 — Writing a real kernel driver (platform + device tree)](#step-7--writing-a-real-kernel-driver-platform--device-tree)
 - [Bug log](#-bug-log-encountered--solved)
 - [What's left to do](#-whats-left-to-do)
 - [Key lessons learned](#-key-lessons-learned)
@@ -87,6 +88,7 @@ Image + .dtb     ← THE self-built kernel + its device tree
 - [x] Packaged and booted an **initramfs** → full working system 🎉
 - [x] Controlled a real LED from userspace (`/sys/class/leds/`)
 - [x] Wrote, cross-compiled and shipped a **C app** (SOS Morse) inside the rootfs
+- [x] Wrote a **kernel driver** (platform + device tree binding, `probe()`, leds-class) 🧩
 
 ---
 
@@ -419,6 +421,71 @@ Transmitting SOS in Morse... (Ctrl+C to stop)
 
 ---
 
+## Step 7 — Writing a real kernel driver (platform + device tree)
+
+Step 6 was **userspace** (a program *using* an existing interface). This step crosses into **kernel space**: writing a driver that *is* the interface, bound to the hardware via the device tree — the core pattern of every embedded Linux driver.
+
+### 7.1 — From "hello world" to the real pattern
+
+Built up in stages, each a compiled `.ko` cross-compiled against the 7.1.5 kernel:
+
+| Stage | What it teaches |
+|---|---|
+| `hello.ko` | `module_init` / `module_exit`, `printk`, module build & `insmod`/`rmmod` |
+| `ledctl.ko` (`/proc`) | Custom userspace interface, `copy_from_user` (the kernel/userspace boundary) |
+| `myled.ko` (leds-class) | Registering with a **framework** → auto-created `/sys/class/leds/` interface + callbacks |
+| **`myled-dt.ko`** (platform + DT) | **The real pattern:** `probe()`, `of_match_table`, bound by the **device tree** |
+
+### 7.2 — The device tree ↔ driver binding
+
+A platform driver doesn't activate on its own — it **waits** for the device tree to declare matching hardware. This is the exact mechanism behind every driver (it's why the WiFi `wl18xx` stayed inert, and why `led-0` worked).
+
+**The driver declares what it handles:**
+```c
+static const struct of_device_id myled_of_match[] = {
+    { .compatible = "steve,myled", },   // ← must match the device tree
+    { },
+};
+
+static int myled_probe(struct platform_device *pdev)
+{
+    const char *label;
+    of_property_read_string(pdev->dev.of_node, "label", &label);  // read DT property
+    led_classdev_register(&pdev->dev, &myled_cdev);               // create /sys interface
+    return 0;
+}
+```
+
+**The device tree declares the hardware** (added to `k3-am67a-beagley-ai.dts`):
+```dts
+steve_led: steve-led {
+    compatible = "steve,myled";          // ← matches the driver
+    label = "hello-from-devicetree";     // ← read by probe()
+    status = "okay";
+};
+```
+
+Rebuild just the device tree, redeploy, reboot:
+```bash
+make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- dtbs
+```
+
+### 7.3 — Proof of the mechanism
+
+Loaded **without** the DT node → the module loads but `probe()` never runs, nothing appears in `/sys/class/leds/`. Loaded **with** the DT node deployed:
+
+```
+myled-dt: probe() called — matched by device tree!
+myled-dt: label from DT = 'hello-from-devicetree'
+myled-dt: registered /sys/class/leds/myled-dt/
+```
+
+The kernel matched the `steve,myled` node to the driver, called `probe()`, which read a property straight from the device tree and created a standard `/sys/class/leds/` interface. **The same binding that drives every real device — written by hand.**
+
+> 💡 This is exactly what a driver engineer writes: a platform driver, an `of_match_table`, a `probe()` that reads the device tree and registers with a subsystem framework. (Only the physical GPIO toggle is stubbed — no external LED was wired — but the full binding mechanism is real.)
+
+---
+
 ## 🐛 Bug log (encountered & solved)
 
 Every bug taught something. This is the real content of the project.
@@ -436,6 +503,8 @@ Every bug taught something. This is the real content of the project.
 | 9 | `can't open /dev/tty2/3/4` loop | BusyBox `/sbin/init` launched instead of ours | `/init` executable at root |
 | 10 | `Invalid FAT entry` on load | File not (properly) written to partition | `sudo cp` + `sync` |
 | 11 | System date stuck at 1970 | DS1307 RTC not handled by mainline | TODO (ntp/date) |
+| 12 | `Invalid ELF header magic` on `insmod` | `.ko` corrupted in transfer (`file` showed `data`) | Re-transfer; verify with `file` / `md5sum` |
+| 13 | Driver's `probe()` never called | `.dtb` still old — `make dtbs` skipped it (stale timestamp) | `touch` the `.dts` (or `rm` the `.dtb`) to force rebuild |
 
 ---
 
@@ -487,6 +556,7 @@ Add an entry to `/boot/firmware/extlinux/extlinux.conf` to boot automatically wi
 7. **Boot-time memory management**: kernel, DT and initramfs must not overlap in RAM.
 8. **`/init` must be executable and at the root** of the initramfs, or the kernel picks the first other init it finds.
 9. **Vendor vs mainline is a real trade-off.** Recent chips (like the CC33xx WiFi) are supported by the vendor kernel long before mainline. Knowing *when not to* forward-port — and documenting the limitation instead — is an engineering decision, not a failure.
+10. **A platform driver is bound by the device tree, not by loading.** `insmod` alone does nothing; the kernel calls `probe()` only when a DT node's `compatible` matches the driver's `of_match_table`. Same mechanism for every real device.
 
 ---
 
