@@ -2,7 +2,7 @@
 
 > Build a complete Linux system **from scratch** for a BeagleY-AI board: cross-compile the mainline kernel, bring it to boot, debug missing drivers, then assemble a minimal BusyBox rootfs with a custom `/init`.
 >
-> A learning project that walks through the **entire embedded stack** — from electricity to shell.
+> No vendor BSP. Every layer above the TI bootloaders was built by hand. — from electricity to shell.
 
 ![Kernel](https://img.shields.io/badge/kernel-Linux%207.1.5%20mainline-blue)
 ![Board](https://img.shields.io/badge/board-BeagleY--AI%20(TI%20AM67A)-green)
