@@ -555,7 +555,7 @@ booti 0x82000000 0x8a000000:${filesize} 0x88000000
 
 ---
 
-## 🙏 Resources
+## Resources
 
 - [Bootlin — Embedded Linux training](https://bootlin.com/docs/) (the reference labs)
 - [BeagleY-AI documentation](https://docs.beagleboard.org/boards/beagley/ai/)
@@ -564,10 +564,4 @@ booti 0x82000000 0x8a000000:${filesize} 0x88000000
 
 ---
 
-<div align="center">
 
-**Built by hand, one bug at a time. 🐧**
-
-*From electricity to shell — the entire embedded Linux stack.*
-
-</div>
