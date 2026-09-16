@@ -1,14 +1,14 @@
-# 🐧 beagley-linux — Embedded Linux From Scratch
+# beagley-linux: Embedded Linux From Scratch
 
-> Build a complete Linux system **from scratch** for a BeagleY-AI board: cross-compile the mainline kernel, bring it to boot, debug missing drivers, then assemble a minimal BusyBox rootfs with a custom `/init`.
+> Build a complete Linux system **from scratch** for a BeagleY board: cross-compile the mainline kernel, bring it to boot, debug missing drivers, then assemble a minimal BusyBox rootfs with a custom `/init`.
 >
-> No vendor BSP. Every layer above the TI bootloaders was built by hand. — from electricity to shell.
+> No vendor BSP. Every layer above the TI bootloaders was built by hand.
 
 ![Kernel](https://img.shields.io/badge/kernel-Linux%207.1.5%20mainline-blue)
-![Board](https://img.shields.io/badge/board-BeagleY--AI%20(TI%20AM67A)-green)
+![Board](https://img.shields.io/badge/board-BeagleY%20(TI%20AM67A)-green)
 ![Arch](https://img.shields.io/badge/arch-aarch64-orange)
 ![Rootfs](https://img.shields.io/badge/rootfs-BusyBox%201.38.0-red)
-![Status](https://img.shields.io/badge/status-boot%20OK%20%F0%9F%8E%89-brightgreen)
+![Status](https://img.shields.io/badge/status-boot%20OK%20-brightgreen)
 
 ---
 
