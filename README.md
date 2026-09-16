@@ -12,30 +12,11 @@
 
 ---
 
-## 📋 Table of Contents
-
-- [Hardware](#-hardware)
-- [Boot stack overview](#-boot-stack-overview)
-- [What was accomplished](#-what-was-accomplished)
-- [Step 1 — Cross-compilation toolchain](#step-1--cross-compilation-toolchain)
-- [Step 2 — Building the mainline kernel](#step-2--building-the-mainline-kernel)
-- [Step 3 — First boot of the custom kernel](#step-3--first-boot-of-the-custom-kernel)
-- [Step 4 — Deep debugging](#step-4--deep-debugging)
-- [Step 5 — BusyBox rootfs from scratch](#step-5--busybox-rootfs-from-scratch)
-- [Step 6 — Controlling hardware: from sysfs to a C app](#step-6--controlling-hardware-from-sysfs-to-a-c-app)
-- [Step 7 — Writing a real kernel driver (platform + device tree)](#step-7--writing-a-real-kernel-driver-platform--device-tree)
-- [Bug log](#-bug-log-encountered--solved)
-- [What's left to do](#-whats-left-to-do)
-- [Key lessons learned](#-key-lessons-learned)
-- [Reference commands](#-reference-commands)
-
----
-
-## 🔧 Hardware
+## Hardware
 
 | Item | Detail |
 |---|---|
-| **Board** | BeagleY-AI |
+| **Board** | BeagleY |
 | **SoC** | Texas Instruments AM67A (aka J722S / TDA4AEN) |
 | **CPU** | 4× ARM Cortex-A53 @ 1.4 GHz + Cortex-R5F + 2× C7x DSP |
 | **RAM** | 4 GB (2 banks: `0x80000000` and `0x880000000`) |
@@ -46,7 +27,7 @@
 
 ---
 
-## 🗺️ Boot stack overview
+## Boot stack overview
 
 The TI AM67A SoC has a multi-stage, TI-specific boot sequence:
 
@@ -72,7 +53,7 @@ Image + .dtb     ← THE self-built kernel + its device tree
 
 ---
 
-## ✅ What was accomplished
+## What was accomplished
 
 - [x] Set up the serial console (Debug Probe + PuTTY on COM4)
 - [x] Explored and fully understood U-Boot (`printenv`, `bdinfo`, `mmc`, `ls`)
@@ -92,7 +73,7 @@ Image + .dtb     ← THE self-built kernel + its device tree
 
 ---
 
-## Step 1 — Cross-compilation toolchain
+## Step 1:  Cross-compilation toolchain
 
 We compile **on** an x86 PC (WSL2) **for** an ARM64 target. This is *cross-compilation*.
 
@@ -115,7 +96,7 @@ aarch64-linux-gnu-gcc --version
 
 ---
 
-## Step 2 — Building the mainline kernel
+## Step 2: Building the mainline kernel
 
 ```bash
 # Kernel sources
@@ -151,7 +132,7 @@ make -j8 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- Image dtbs modules
 
 ---
 
-## Step 3 — First boot of the custom kernel
+## Step 3: First boot of the custom kernel
 
 **Reversible** method: drop the kernel next to the original files (`-mine` suffix) and boot manually from U-Boot, overwriting nothing.
 
@@ -183,7 +164,7 @@ uname -r    # → 7.1.5   (not the original 7.0.9)
 
 ---
 
-## Step 4 — Deep debugging
+## Step 4: Deep debugging
 
 Two services failed at boot (`iwd` = WiFi, `docker`). Investigation method: **funnel** from symptom to root cause.
 
@@ -194,7 +175,7 @@ Two services failed at boot (`iwd` = WiFi, `docker`). Investigation method: **fu
 systemctl status  →  ip link / journalctl  →  dmesg  →  .config / device tree
 ```
 
-### 🔴 WiFi (`iwd.service`) — a 3-layer investigation
+### 🔴 WiFi (`iwd.service`) : a 3-layer investigation
 
 | Step | Finding |
 |---|---|
@@ -209,7 +190,7 @@ systemctl status  →  ip link / journalctl  →  dmesg  →  .config / device t
 
 > 💡 **The deep root cause:** the board's actual WiFi chip is a **TI CC33xx** (recent). Its driver is [new and under active development at TI](https://docs.beagleboard.org/boards/beagley/ai/demos/using-edge-ai.html), shipped only in the **vendor kernel** (6.1/6.6/6.12-ti) as a separate module (`cc33xx 1.0.x`). Mainline 7.1.5 only ships the older `wl1251/wl12xx/wl18xx` drivers.
 >
-> **Engineering decision:** forward-porting a 6.x vendor driver (itself still in active development, and troublesome even on its native kernel) to mainline 7.1.5 would mean reconciling large kernel-API differences for a very low chance of success. The right call — and what a BSP engineer would conclude — is that **this board's WiFi is only supported on the TI vendor kernel**, not yet on mainline. Documented, not forced.
+> **Decision:** forward-porting a 6.x vendor driver (itself still in active development, and troublesome even on its native kernel) to mainline 7.1.5 would mean reconciling large kernel-API differences for a very low chance of success. 
 
 ### 🔴 Docker (`docker.service`)
 
@@ -246,18 +227,18 @@ tar --exclude='7.1.5/build' --exclude='7.1.5/source' \
 
 ---
 
-## Step 5 — BusyBox rootfs from scratch
+## Step 5: BusyBox rootfs from scratch
 
 Build a **minimal** root filesystem by hand, independent from Debian.
 
-### 5.1 — Directory tree
+### 5.1 - Directory tree
 
 ```bash
 mkdir -p ~/beagley/rootfs && cd ~/beagley/rootfs
 mkdir -p bin sbin etc proc sys dev usr/bin usr/sbin
 ```
 
-### 5.2 — BusyBox (static)
+### 5.2 - BusyBox (static)
 
 BusyBox = **a single binary** providing ~200 Unix commands via symlinks.
 Built **static** to be self-contained (no external libc in the bare rootfs).
@@ -276,7 +257,7 @@ make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
      CONFIG_PREFIX=~/beagley/rootfs install
 ```
 
-### 5.3 — The `/init` (PID 1)
+### 5.3 - The `/init` (PID 1)
 
 The very first program launched by the kernel. See the `init` file in this repo:
 
@@ -305,14 +286,14 @@ exec setsid cttyhack /bin/sh                   # shell attached to serial consol
 chmod +x ~/beagley/rootfs/init
 ```
 
-### 5.4 — Packaging into an initramfs
+### 5.4 - Packaging into an initramfs
 
 ```bash
 cd ~/beagley/rootfs
 find . | cpio -H newc -o | gzip > ~/beagley/initramfs.cpio.gz   # → 1.2 MB
 ```
 
-### 5.5 — Booting the initramfs (U-Boot)
+### 5.5 - Booting the initramfs (U-Boot)
 
 ```
 mmc dev 1
@@ -341,12 +322,12 @@ Mem:  3872428 total   51444 used   3813520 free   ← 51 MB for the whole system
 
 ---
 
-## Step 6 — Controlling hardware: from sysfs to a C app
+## Step 6: Controlling hardware: from sysfs to a C app
 
 With the platform running, the next question is: *how does an application actually talk to hardware?*
-This step drives a real LED — first from the shell, then from a C program cross-compiled and shipped inside the rootfs.
+This step drives a real LED, first from the shell, then from a C program cross-compiled and shipped inside the rootfs.
 
-### 6.1 — The mechanism (device tree → driver → sysfs)
+### 6.1 - The mechanism (device tree → driver → sysfs)
 
 The chain that makes hardware controllable is the heart of embedded Linux:
 
@@ -360,9 +341,9 @@ Driver exposes an interface:  /sys/class/leds/<led>/
 Userspace writes to it → the physical LED reacts
 ```
 
-A key insight lived through this project: **hardware access comes from the kernel + device tree, not from the distro.** The same LED could be controlled from Debian *and* from the bare BusyBox system — because both used the same kernel and device tree.
+A key insight lived through this project: **hardware access comes from the kernel + device tree, not from the distro.** The same LED could be controlled from Debian *and* from the bare BusyBox system, because both used the same kernel and device tree.
 
-### 6.2 — Discovering and controlling the LED
+### 6.2 - Discovering and controlling the LED
 
 ```bash
 ls /sys/class/leds/
@@ -374,9 +355,9 @@ echo 1    > /sys/class/leds/led-0/brightness   # ON  (LED turns red)
 echo 0    > /sys/class/leds/led-0/brightness   # OFF
 ```
 
-> 💡 **Another mainline vs vendor difference:** the vendor device tree names the LEDs `ACT`, `PWR`, `mmc1::`, `mmc2::` (readable, with colors). The mainline device tree exposes generic names (`led-0`, `:heartbeat`) and fewer LEDs — the base hardware works, but the vendor adds the polish.
+> **Another mainline vs vendor difference:** the vendor device tree names the LEDs `ACT`, `PWR`, `mmc1::`, `mmc2::` (readable, with colors). The mainline device tree exposes generic names (`led-0`, `:heartbeat`) and fewer LEDs: the base hardware works, but the vendor adds the polish.
 
-### 6.3 — A real C application: SOS in Morse code
+### 6.3 - A real C application: SOS in Morse code
 
 A C program that blinks `··· ——— ···` (SOS) on the LED. Uses the fundamental syscalls of embedded development: `open`, `write`, `close`, `usleep`. See `sos.c` in this repo.
 
@@ -392,7 +373,7 @@ void blink(int duration) {
 // S = dot dot dot, O = dash dash dash, S = dot dot dot → repeat
 ```
 
-**Cross-compiled static** (self-contained, runs on the bare rootfs — like BusyBox):
+**Cross-compiled static** (self-contained, runs on the bare rootfs : like BusyBox):
 
 ```bash
 aarch64-linux-gnu-gcc -static -o sos sos.c
@@ -408,9 +389,9 @@ find . | cpio -H newc -o | gzip > ~/beagley/initramfs.cpio.gz   # repack the ima
 ```
 
 > ⚠️ An initramfs lives **in RAM** and is rebuilt from its archive on every boot.
-> To make a change permanent, the archive must be **repacked** — you can't just drop a file at runtime.
+> To make a change permanent, the archive must be **repacked** (you can't just drop a file at runtime).
 
-✅ **Result:** booting the fully self-built system and running `sos` makes the LED transmit the Morse distress signal in a loop — a complete embedded dev cycle: **write on PC → cross-compile → deploy to target → hardware reacts.**
+✅ **Result:** booting the fully self-built system and running `sos` makes the LED transmit the Morse distress signal in a loop, a complete embedded dev cycle: **write on PC → cross-compile → deploy to target → hardware reacts.**
 
 ```
 ~ # sos
@@ -421,11 +402,11 @@ Transmitting SOS in Morse... (Ctrl+C to stop)
 
 ---
 
-## Step 7 — Writing a real kernel driver (platform + device tree)
+## Step 7: Writing a real kernel driver (platform + device tree)
 
-Step 6 was **userspace** (a program *using* an existing interface). This step crosses into **kernel space**: writing a driver that *is* the interface, bound to the hardware via the device tree — the core pattern of every embedded Linux driver.
+Step 6 was **userspace** (a program *using* an existing interface). This step crosses into **kernel space**: writing a driver that *is* the interface, bound to the hardware via the device tree, the core pattern of every embedded Linux driver.
 
-### 7.1 — From "hello world" to the real pattern
+### 7.1 - The real pattern
 
 Built up in stages, each a compiled `.ko` cross-compiled against the 7.1.5 kernel:
 
@@ -436,9 +417,9 @@ Built up in stages, each a compiled `.ko` cross-compiled against the 7.1.5 kerne
 | `myled.ko` (leds-class) | Registering with a **framework** → auto-created `/sys/class/leds/` interface + callbacks |
 | **`myled-dt.ko`** (platform + DT) | **The real pattern:** `probe()`, `of_match_table`, bound by the **device tree** |
 
-### 7.2 — The device tree ↔ driver binding
+### 7.2 - The device tree ↔ driver binding
 
-A platform driver doesn't activate on its own — it **waits** for the device tree to declare matching hardware. This is the exact mechanism behind every driver (it's why the WiFi `wl18xx` stayed inert, and why `led-0` worked).
+A platform driver doesn't activate on its own, it **waits** for the device tree to declare matching hardware. This is the exact mechanism behind every driver (it's why the WiFi `wl18xx` stayed inert, and why `led-0` worked).
 
 **The driver declares what it handles:**
 ```c
@@ -470,7 +451,7 @@ Rebuild just the device tree, redeploy, reboot:
 make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- dtbs
 ```
 
-### 7.3 — Proof of the mechanism
+### 7.3 - Proof of the mechanism
 
 Loaded **without** the DT node → the module loads but `probe()` never runs, nothing appears in `/sys/class/leds/`. Loaded **with** the DT node deployed:
 
@@ -480,13 +461,12 @@ myled-dt: label from DT = 'hello-from-devicetree'
 myled-dt: registered /sys/class/leds/myled-dt/
 ```
 
-The kernel matched the `steve,myled` node to the driver, called `probe()`, which read a property straight from the device tree and created a standard `/sys/class/leds/` interface. **The same binding that drives every real device — written by hand.**
+The kernel matched the `steve,myled` node to the driver, called `probe()`, which read a property straight from the device tree and created a standard `/sys/class/leds/` interface. 
 
-> 💡 This is exactly what a driver engineer writes: a platform driver, an `of_match_table`, a `probe()` that reads the device tree and registers with a subsystem framework. (Only the physical GPIO toggle is stubbed — no external LED was wired — but the full binding mechanism is real.)
 
 ---
 
-## 🐛 Bug log (encountered & solved)
+## Bug log (encountered & solved)
 
 Every bug taught something. This is the real content of the project.
 
@@ -505,43 +485,6 @@ Every bug taught something. This is the real content of the project.
 | 11 | System date stuck at 1970 | DS1307 RTC not handled by mainline | TODO (ntp/date) |
 | 12 | `Invalid ELF header magic` on `insmod` | `.ko` corrupted in transfer (`file` showed `data`) | Re-transfer; verify with `file` / `md5sum` |
 | 13 | Driver's `probe()` never called | `.dtb` still old — `make dtbs` skipped it (stale timestamp) | `touch` the `.dts` (or `rm` the `.dtb`) to force rebuild |
-
----
-
-## 📌 What's left to do
-
-### ✅ WiFi — investigated & decided (not a TODO)
-Full investigation done (see the 3-layer WiFi section above). Conclusion: the board's CC33xx chip has **no mainline driver** in 7.1.5; it's only supported by the TI vendor kernel (6.x) via a separate, actively-developed module. Forward-porting was evaluated and deliberately **not** attempted — wrong cost/benefit. WiFi on mainline is a known limitation, documented as an engineering decision.
-
-<details>
-<summary><b>🎫 TICKET-001 — WiFi (CC33xx) not supported on mainline — help welcome</b> (click to expand)</summary>
-
-**Status:** open · **Priority:** low · **Blocked by:** upstream (TI / mainline) · **Contributions welcome** 🙌
-
-The CC33xx driver is *under active development at TI*. The situation is **time-dependent** — it may reach mainline in a future release. If you're reading this and have ideas, hit the `wlan0` on mainline, or know the current upstream status, **issues and PRs are welcome**.
-
-**Context:**
-
-> WiFi non-functional on a BeagleY-AI (SoC AM67A / J722S) with a **mainline 7.1.5** kernel. Diagnosis already done: the chip is a **CC33xx** (`compatible = "ti,cc3300"` in the vendor device tree), and its driver is **not in mainline** (`drivers/net/wireless/ti/` only has wl1251/wl12xx/wl18xx/wlcore) — it only ships in the TI vendor kernel (6.1/6.6/6.12-ti) as a separately-developed module. Modules deploy fine and `wl18xx` loads, but it's the wrong driver, so no `wlan0` and `dmesg` stays silent. **Has this changed since?** Is the CC33xx driver now in a newer mainline release? What are the realistic options to bring up this WiFi — forward-port the vendor driver, move to a newer kernel, or stay on the TI vendor kernel?
-
-**Checks to run when picking this up:**
-- `ls drivers/net/wireless/ti/` on a newer mainline — is there a `cc33xx/` now?
-- Search kernel changelogs / `git log` for `cc33xx` upstreaming
-- Check the latest TI vendor kernel version and the `cc33xx` driver release
-
-**If you've solved this** (on mainline or via a clean forward-port), please open a PR or an issue — I'd love to close this ticket. 🚀
-</details>
-
-### 🔵 Docker — Network modules
-Load/enable `nf_tables`, `nft_chain_nat`, etc.
-
-### 🔵 Permanent boot (extlinux)
-Add an entry to `/boot/firmware/extlinux/extlinux.conf` to boot automatically without typing U-Boot commands.
-
-### 🔵 Misc
-- Fix the system date (RTC / ntp)
-- Enrich the rootfs (real init system, networking, custom programs)
-- Trim the kernel config (drop unused drivers → faster boot)
 
 ---
 
