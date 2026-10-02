@@ -406,6 +406,10 @@ Transmitting SOS in Morse... (Ctrl+C to stop)
 
 Step 6 was **userspace** (a program *using* an existing interface). This step crosses into **kernel space**: writing a driver that *is* the interface, bound to the hardware via the device tree, the core pattern of every embedded Linux driver.
 
+> The driver registers a **virtual** LED (it does not toggle a GPIO yet): its purpose is to
+> demonstrate the device tree binding (`probe()`, `of_match_table`, reading a DT property).
+> The physical LED of step 6 is driven by the kernel's standard `leds-gpio` driver.
+
 ### 7.1 - The real pattern
 
 Built up in stages, each a compiled `.ko` cross-compiled against the 7.1.5 kernel:
